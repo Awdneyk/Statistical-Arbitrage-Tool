@@ -1,0 +1,36 @@
+FROM ubuntu:22.04
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    pkg-config \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uWebSockets dependencies
+RUN apt-get update && apt-get install -y \
+    libuv1-dev \
+    libssl-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create working directory
+WORKDIR /app
+
+# Copy source code
+COPY include/ include/
+COPY src/ src/
+COPY CMakeLists.txt .
+
+# Build the application
+RUN mkdir build && cd build && \
+    cmake .. && \
+    make -j$(nproc)
+
+# Expose no ports (trading engine uses shared memory)
+# Create volume for shared memory
+VOLUME ["/dev/shm"]
+
+# Run the trading engine
+CMD ["./build/trading_engine"]
