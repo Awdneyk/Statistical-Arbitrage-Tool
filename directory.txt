@@ -1,1 +1,0 @@
-cd /mnt/c/Users/kmita/OneDrive/Documents/GitHub/Statistical-Arbitrage-Tool
