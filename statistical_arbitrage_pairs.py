@@ -134,19 +134,48 @@ class cTraderDataClient:
         )
         
         # Generate price series with mean reversion and volatility clustering
-        returns = np.random.normal(0, 0.0001, num_bars)  # Low volatility for forex
+        # Adjust volatility based on symbol characteristics
+        volatility_map = {
+            'EURUSD': 0.00008,   # Lower volatility major pair
+            'USDCHF': 0.00009, 
+            'GBPUSD': 0.00012,   # Higher volatility 
+            'AUDUSD': 0.00010,
+            'USDCAD': 0.00009,
+            'NZDUSD': 0.00011,
+            'EURCHF': 0.00007    # Very low volatility cross
+        }
+        
+        vol = volatility_map.get(symbol, 0.0001)
+        returns = np.random.normal(0, vol, num_bars)
+        
+        # Create more realistic correlations between USD pairs
+        if 'USD' in symbol:
+            # Add common USD factor
+            usd_factor = np.random.normal(0, vol * 0.3, num_bars)
+            if symbol.startswith('USD'):
+                returns += usd_factor
+            else:
+                returns -= usd_factor  # Inverse correlation for XXX/USD pairs
         
         # Add some trend and mean reversion
         for i in range(1, len(returns)):
-            # Mean reversion component
-            returns[i] += -0.001 * returns[i-1] if abs(returns[i-1]) > 0.0005 else 0
+            # Mean reversion component - stronger for larger moves
+            if abs(returns[i-1]) > 2 * vol:
+                returns[i] += -0.3 * returns[i-1]
             
             # Add some autocorrelation for realistic price action
-            if i > 10:
-                returns[i] += 0.1 * np.mean(returns[i-10:i])
+            if i > 5:
+                returns[i] += 0.05 * np.mean(returns[i-5:i])
+        
+        # Ensure no extreme outliers
+        returns = np.clip(returns, -5*vol, 5*vol)
         
         # Convert to prices
         prices = base_price * np.exp(np.cumsum(returns))
+        
+        # Ensure prices don't go negative or too extreme
+        prices = np.maximum(prices, base_price * 0.5)
+        prices = np.minimum(prices, base_price * 2.0)
         
         # Generate OHLC data
         df = pd.DataFrame({
@@ -223,15 +252,32 @@ class StatisticalArbitrageAnalyzer:
         # Align all price series by timestamp
         price_series = {}
         for symbol, df in self.price_data.items():
-            price_series[symbol] = df.set_index('timestamp')['close']
+            if df is None or df.empty:
+                print(f"    ⚠️  Skipping {symbol} - no data for correlation")
+                continue
+            try:
+                price_series[symbol] = df.set_index('timestamp')['close']
+            except Exception as e:
+                print(f"    ⚠️  Error processing {symbol} for correlation: {e}")
+                continue
+        
+        if len(price_series) < 2:
+            print(f"❌ Not enough symbols for correlation matrix ({len(price_series)} available)")
+            self.correlation_matrix = pd.DataFrame()
+            return self.correlation_matrix
         
         # Create combined DataFrame
-        combined_df = pd.DataFrame(price_series)
+        combined_df = pd.DataFrame(price_series).dropna()
+        
+        if combined_df.empty:
+            print(f"❌ No data available for correlation computation")
+            self.correlation_matrix = pd.DataFrame()
+            return self.correlation_matrix
         
         # Compute correlation matrix
         self.correlation_matrix = combined_df.corr()
         
-        print("✅ Correlation matrix computed\\n")
+        print(f"✅ Correlation matrix computed for {len(self.correlation_matrix)} symbols\\n")
         return self.correlation_matrix
     
     def test_cointegration(self, significance_level: float = 0.05) -> List[Dict]:
@@ -249,23 +295,47 @@ class StatisticalArbitrageAnalyzer:
         # Align all price series
         price_series = {}
         for symbol, df in self.price_data.items():
-            price_series[symbol] = df.set_index('timestamp')['close']
+            if df is None or df.empty:
+                print(f"    ⚠️  Skipping {symbol} - no data available")
+                continue
+            try:
+                price_series[symbol] = df.set_index('timestamp')['close']
+            except Exception as e:
+                print(f"    ⚠️  Error processing {symbol}: {e}")
+                continue
+        
+        if len(price_series) < 2:
+            print(f"    ❌ Not enough symbols with valid data ({len(price_series)} available)")
+            return []
         
         combined_df = pd.DataFrame(price_series).dropna()
         
+        if combined_df.empty:
+            print(f"    ❌ No overlapping data after alignment")
+            return []
+        
+        print(f"    📊 Data aligned: {len(combined_df)} observations for {len(combined_df.columns)} symbols")
+        
         results = []
-        total_pairs = len(list(combinations(self.symbols, 2)))
+        available_symbols = list(combined_df.columns)
+        total_pairs = len(list(combinations(available_symbols, 2)))
         current_pair = 0
         
-        for symbol1, symbol2 in combinations(self.symbols, 2):
+        for symbol1, symbol2 in combinations(available_symbols, 2):
             current_pair += 1
             print(f"  ↳ Testing {symbol1}/{symbol2} ({current_pair}/{total_pairs})")
             
-            if symbol1 not in combined_df.columns or symbol2 not in combined_df.columns:
-                continue
-            
             y = combined_df[symbol1].values
             x = combined_df[symbol2].values
+            
+            # Validate data quality
+            if len(y) < 50 or len(x) < 50:
+                print(f"    ⚠️  Insufficient data points ({len(y)} observations)")
+                continue
+            
+            if np.all(y == y[0]) or np.all(x == x[0]):
+                print(f"    ⚠️  Constant price series detected")
+                continue
             
             # Perform Engle-Granger cointegration test
             try:
@@ -318,7 +388,13 @@ class StatisticalArbitrageAnalyzer:
         print(f"\\n✅ Cointegration testing completed:")
         print(f"   📊 Total pairs tested: {len(results)}")
         print(f"   🎯 Cointegrated pairs found: {cointegrated_count}")
-        print(f"   📈 Success rate: {cointegrated_count/len(results)*100:.1f}%\\n")
+        
+        # Fix division by zero error
+        if len(results) > 0:
+            success_rate = cointegrated_count/len(results)*100
+            print(f"   📈 Success rate: {success_rate:.1f}%\\n")
+        else:
+            print(f"   ⚠️  No pairs could be tested\\n")
         
         return results
     
@@ -369,6 +445,10 @@ class StatisticalArbitrageAnalyzer:
         if self.correlation_matrix is None:
             self.compute_correlation_matrix()
         
+        if self.correlation_matrix is None or self.correlation_matrix.empty:
+            print("❌ No correlation matrix available for plotting")
+            return
+        
         plt.figure(figsize=(10, 8))
         mask = np.triu(np.ones_like(self.correlation_matrix, dtype=bool))
         
@@ -416,12 +496,17 @@ class StatisticalArbitrageAnalyzer:
         ]
         
         df_output = df[output_columns].round(6)
-        df_output.to_csv(filename, index=False)
         
-        print(f"💾 Results saved to {filename}")
-        print(f"📈 Top 3 pairs:")
-        for i, row in df_output.head(3).iterrows():
-            print(f"   {i+1}. {row['pair']} - Score: {row['composite_score']:.4f}, p-value: {row['p_value']:.6f}")
+        try:
+            df_output.to_csv(filename, index=False)
+            print(f"💾 Results saved to {filename}")
+            
+            print(f"📈 Top {min(3, len(df_output))} pairs:")
+            for i, row in df_output.head(3).iterrows():
+                print(f"   {i+1}. {row['pair']} - Score: {row['composite_score']:.4f}, p-value: {row['p_value']:.6f}")
+                
+        except Exception as e:
+            print(f"❌ Error saving results to {filename}: {e}")
 
 
 def main():
