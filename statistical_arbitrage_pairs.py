@@ -5,7 +5,7 @@ Statistical Arbitrage HFT Strategy - Cointegrated Pairs Identification
 This script identifies cointegrated and highly correlated trading pairs from 
 cTrader Open API data for statistical arbitrage opportunities.
 
-Author: Quantitative Developer
+Author: Abraham Kyendwa
 Date: 2025-06-18
 """
 
