@@ -51,7 +51,8 @@ pip install -r requirements.txt
    ```python
    # In config.py
    CTRADER_CONFIG = {
-       'api_key': 'your_ctrader_api_key_here',
+       'client_id': 'your_client_id_here',
+       'client_secret': 'your_client_secret_here',
        'base_url': 'https://api.ctrader.com/v1',
        'demo_mode': False,  # Set to True for testing
    }

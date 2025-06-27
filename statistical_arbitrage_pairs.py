@@ -66,7 +66,10 @@ class cTraderDataClient:
             DataFrame with columns: timestamp, open, high, low, close, volume
         """
         if self.demo_mode:
-            return self._generate_mock_data(symbol, days_back)
+            print(f"    📝 Generating mock data for {symbol}...")
+            mock_data = self._generate_mock_data(symbol, days_back)
+            print(f"    ✅ Generated {len(mock_data)} bars for {symbol}")
+            return mock_data
         
         # Real API implementation would go here
         # Example structure:
@@ -109,6 +112,17 @@ class cTraderDataClient:
         # Number of 1-minute bars in the specified period
         num_bars = days_back * 24 * 60
         
+        # Use same timestamps for all symbols but different price seeds
+        # This ensures all symbols have the same time index for correlation analysis
+        if not hasattr(self, '_base_timestamps') or len(self._base_timestamps) != num_bars:
+            self._base_timestamps = pd.date_range(
+                start=datetime.now() - timedelta(days=days_back),
+                periods=num_bars,
+                freq='1min'
+            )
+        
+        timestamps = self._base_timestamps
+        
         # Set random seed based on symbol for reproducible results
         np.random.seed(hash(symbol) % (2**32))
         
@@ -120,18 +134,26 @@ class cTraderDataClient:
             'AUDUSD': 0.6750,
             'USDCAD': 1.3450,
             'NZDUSD': 0.6150,
-            'EURCHF': 0.9500
+            'EURCHF': 0.9500,
+            'BTCUSD': 45000.0,
+            'ETHUSD': 2800.0,
+            'SPX500': 4800.0,
+            'USDJPY': 150.0,
+            'RDS.A': 65.0,      # Royal Dutch Shell A
+            'RDS.B': 64.8,      # Royal Dutch Shell B (slight discount)
+            'GLD': 185.0,       # Gold ETF
+            'GDX': 28.0,        # Gold miners ETF
+            'SPY': 480.0,       # S&P 500 ETF
+            'IVV': 479.5,       # S&P 500 ETF (similar to SPY)
+            'AAPL': 190.0,      # Apple
+            'MSFT': 420.0,      # Microsoft
+            'GOOGL': 140.0,     # Google
+            'META': 310.0,      # Meta (Facebook)
+            'CSCO': 52.0,       # Cisco
+            'JNPR': 37.0        # Juniper Networks
         }
         
         base_price = base_prices.get(symbol, 1.0000)
-        
-        # Generate correlated price movements
-        # Create realistic intraday volatility patterns
-        timestamps = pd.date_range(
-            start=datetime.now() - timedelta(days=days_back),
-            periods=num_bars,
-            freq='1min'
-        )
         
         # Generate price series with mean reversion and volatility clustering
         # Adjust volatility based on symbol characteristics
@@ -142,7 +164,23 @@ class cTraderDataClient:
             'AUDUSD': 0.00010,
             'USDCAD': 0.00009,
             'NZDUSD': 0.00011,
-            'EURCHF': 0.00007    # Very low volatility cross
+            'EURCHF': 0.00007,   # Very low volatility cross
+            'BTCUSD': 0.008,     # High volatility crypto
+            'ETHUSD': 0.012,     # Very high volatility crypto
+            'SPX500': 0.0015,    # Stock index volatility
+            'USDJPY': 0.0001,    # Forex pair volatility
+            'RDS.A': 0.002,      # Oil stock volatility
+            'RDS.B': 0.002,      # Oil stock volatility (similar to RDS.A)
+            'GLD': 0.0012,       # Gold ETF volatility
+            'GDX': 0.003,        # Gold miners volatility (higher than gold)
+            'SPY': 0.0013,       # S&P 500 ETF volatility
+            'IVV': 0.0013,       # S&P 500 ETF volatility (same as SPY)
+            'AAPL': 0.0025,      # Apple volatility
+            'MSFT': 0.0020,      # Microsoft volatility
+            'GOOGL': 0.0030,     # Google volatility
+            'META': 0.0035,      # Meta volatility (higher)
+            'CSCO': 0.0022,      # Cisco volatility
+            'JNPR': 0.0028       # Juniper volatility (smaller cap)
         }
         
         vol = volatility_map.get(symbol, 0.0001)
@@ -252,11 +290,14 @@ class StatisticalArbitrageAnalyzer:
         # Align all price series by timestamp
         price_series = {}
         for symbol, df in self.price_data.items():
+            print(f"    🔍 Processing {symbol}: {len(df) if df is not None else 0} rows")
             if df is None or df.empty:
                 print(f"    ⚠️  Skipping {symbol} - no data for correlation")
                 continue
             try:
+                print(f"    📊 Columns in {symbol}: {list(df.columns)}")
                 price_series[symbol] = df.set_index('timestamp')['close']
+                print(f"    ✅ {symbol} processed: {len(price_series[symbol])} price points")
             except Exception as e:
                 print(f"    ⚠️  Error processing {symbol} for correlation: {e}")
                 continue
@@ -267,7 +308,13 @@ class StatisticalArbitrageAnalyzer:
             return self.correlation_matrix
         
         # Create combined DataFrame
-        combined_df = pd.DataFrame(price_series).dropna()
+        print(f"    🔄 Creating combined DataFrame from {len(price_series)} series...")
+        combined_df = pd.DataFrame(price_series)
+        print(f"    📏 Combined DataFrame shape before dropna: {combined_df.shape}")
+        print(f"    📊 Sample timestamps: {combined_df.index[:5].tolist()}")
+        
+        combined_df = combined_df.dropna()
+        print(f"    📏 Combined DataFrame shape after dropna: {combined_df.shape}")
         
         if combined_df.empty:
             print(f"❌ No data available for correlation computation")
@@ -517,7 +564,7 @@ def main():
     print("=" * 60)
     
     # Configuration
-    SYMBOLS = ['EURUSD', 'USDCHF', 'GBPUSD', 'AUDUSD', 'USDCAD', 'NZDUSD', 'EURCHF']
+    SYMBOLS = ['RDS.A', 'RDS.B', 'GLD', 'GDX', 'SPY', 'IVV', 'AAPL', 'MSFT', 'GOOGL', 'META', 'CSCO', 'JNPR', 'EURUSD', 'GBPUSD', 'USDCHF']
     DAYS_BACK = 90
     SIGNIFICANCE_LEVEL = 0.05
     
@@ -525,9 +572,12 @@ def main():
     print(f"📅 Analysis period: {DAYS_BACK} days")
     print(f"📊 Significance level: {SIGNIFICANCE_LEVEL}\\n")
     
-    # Initialize data client (demo mode for this example)
-    # For production, set demo_mode=False and provide API key
-    client = cTraderDataClient(demo_mode=True)
+    # Initialize data client using config
+    from config import CTRADER_CONFIG
+    client = cTraderDataClient(
+        api_key=CTRADER_CONFIG.get('client_id'),
+        demo_mode=CTRADER_CONFIG.get('demo_mode', True)
+    )
     
     # Initialize analyzer
     analyzer = StatisticalArbitrageAnalyzer(SYMBOLS, client)

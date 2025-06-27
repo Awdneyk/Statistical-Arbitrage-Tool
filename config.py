@@ -3,8 +3,10 @@ Configuration file for Statistical Arbitrage Strategy
 """
 
 # cTrader API Configuration
+# NOTE: Replace with your actual cTrader API credentials
 CTRADER_CONFIG = {
-    'api_key': 'your_ctrader_api_key_here',
+    'client_id': 'YOUR_CTRADER_CLIENT_ID',
+    'client_secret': 'YOUR_CTRADER_CLIENT_SECRET',
     'base_url': 'https://api.ctrader.com/v1',
     'demo_mode': True,  # Set to False for live trading
     'timeout': 30,
